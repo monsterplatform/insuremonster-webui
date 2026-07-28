@@ -19,7 +19,17 @@ pipeline {
             steps {
                 script {
                     def envFile = params.ENV_FILE_CUSTOM?.trim()
-                    if (!envFile) { error "ENV_FILE_CUSTOM is required" }
+                    if (!envFile) {
+                        // Webhook/SCM-triggered builds pass no parameters, and Declarative
+                        // param-sync wipes the job-config defaultValue after the first run.
+                        // The Jenkins job folder is the site hostname, so derive the env file.
+                        def jobFolder = env.JOB_NAME?.tokenize('/')?.first()
+                        if (jobFolder?.contains('.')) {
+                            envFile = "/app/environments/${jobFolder}.env"
+                            echo "ENV_FILE_CUSTOM not provided — derived from job folder: ${envFile}"
+                        }
+                    }
+                    if (!envFile) { error "Could not determine environment file path. Provide ENV_FILE_CUSTOM." }
                     def envFileName = envFile.tokenize('/').last()
                     siteId = envFileName.replaceAll('\\.env$', '')
                     def content = sh(script: "cat '${envFile.replace("'", "'\"'\"'")}'", returnStdout: true)
