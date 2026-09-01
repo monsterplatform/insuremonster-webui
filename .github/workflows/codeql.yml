@@ -1,0 +1,83 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main, develop]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+  pull_request:
+    branches: [main, develop]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    name: CodeQL Analysis
+    runs-on: [self-hosted, monster-vps]
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      # CodeQL's javascript-typescript extractor shells out to its own
+      # TypeScript parser wrapper using whatever `node` is first on PATH.
+      # The self-hosted monster-vps runners have a stale system Node that
+      # cannot parse optional chaining ("SyntaxError: Unexpected token ?"),
+      # which crashes the extractor. This step is what puts a modern Node
+      # on PATH - the job does no app build, so the version only needs to
+      # be new enough for the parser wrapper.
+      - name: Setup Node (required by the CodeQL TS extractor)
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: '/language:javascript-typescript'
+          output: sarif-results
+          upload: never
+
+      - name: Check for critical findings
+        run: |
+          SARIF=$(find sarif-results -name "*.sarif" 2>/dev/null | head -1)
+          if [ -z "$SARIF" ]; then
+            echo "No SARIF output - skipping"
+            exit 0
+          fi
+          ERRORS=$(jq '[.runs[].results[] | select(.level == "error")] | length' "$SARIF" 2>/dev/null || echo 0)
+          WARNINGS=$(jq '[.runs[].results[] | select(.level == "warning")] | length' "$SARIF" 2>/dev/null || echo 0)
+          echo "CodeQL: $ERRORS error(s), $WARNINGS warning(s)"
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "CodeQL found $ERRORS critical security issue(s):"
+            jq -r '.runs[].results[] | select(.level == "error") | "  - [" + .ruleId + "] " + .message.text' "$SARIF"
+            exit 1
+          fi
+          echo "No critical CodeQL findings"
+
+      - name: Upload SARIF as artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: codeql-results
+          path: sarif-results/
+          retention-days: 1
