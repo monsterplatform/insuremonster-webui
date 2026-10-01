@@ -18,7 +18,8 @@ FROM node:20-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000
 # The commit this image was built from, served by /api/health as `commit` so a deploy is
-# verified over HTTPS instead of by root on the box. Jenkins passes `git rev-parse HEAD`.
+# verified over HTTPS instead of by root on the box. Jenkins passes HEAD, suffixed `-dirty` when
+# the build changed a tracked file (e.g. a regenerated lockfile); `unknown` when there is no checkout.
 ARG BUILD_COMMIT=unknown
 ENV BUILD_COMMIT=${BUILD_COMMIT}
 COPY --from=builder /app/.next/standalone ./
