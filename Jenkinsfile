@@ -53,7 +53,7 @@ pipeline {
                     sh """
                     docker network inspect app-network >/dev/null 2>&1 || docker network create app-network
                     DOCKER_BUILDKIT=0 docker build --no-cache \
-                      --build-arg BUILD_COMMIT="\$(git rev-parse -q --verify HEAD 2>/dev/null || echo unknown)\$(git diff --quiet HEAD -- . ':(exclude).npmrc' 2>/dev/null || [ \$? -ne 1 ] || echo -dirty)" \
+                      --build-arg BUILD_COMMIT="\$(git rev-parse HEAD 2>/dev/null || echo unknown)" \
                       --network=app-network \
                       --build-arg NPM_REGISTRY_URL='${reg}' \
                       -t ${dockerImage} .
