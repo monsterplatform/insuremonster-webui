@@ -63,11 +63,23 @@ pipeline {
         stage('Deploy') {
             steps {
                 script {
-                    def envFlags = envVarsMap.collect { k, v -> "-e ${k}='${v}'" }.join(' ')
+                    // The container's runtime env reaches docker only through a file in a private directory, never
+                    // the docker run command line: Jenkins runs sh with -x, and `-e KEY='value'` printed every value
+                    // of the env file into the build console (found on prod, 2026-10-01). post { always } removes
+                    // the directory however the build ends.
+                    def secretsDir = "${env.WORKSPACE}/.deploy-secrets"
+                    sh "rm -rf '${secretsDir}' && mkdir -m 700 '${secretsDir}'"
+                    envVarsMap.each { k, v ->
+                        if (!(k ==~ /[A-Za-z_][A-Za-z0-9_]*/) || (v ?: '') =~ /[\r\n]/) {
+                            error "Env entry '${k}' cannot be passed to docker --env-file"
+                        }
+                    }
+                    def runEnvFile = "${secretsDir}/run.env"
+                    writeFile file: runEnvFile, text: envVarsMap.collect { k, v -> "${k}=${v ?: ''}" }.join('\n') + '\n'
                     sh """
                     docker rm -f ${dockerService} || true
                     docker network inspect edge-network >/dev/null 2>&1 || docker network create edge-network
-                    docker run -d --name ${dockerService} --network app-network ${envFlags} \
+                    docker run -d --name ${dockerService} --network app-network --env-file '${runEnvFile}' \
                       --restart unless-stopped ${dockerImage}
                     docker network connect edge-network ${dockerService} || true
                     docker ps --filter name=${dockerService}
@@ -77,6 +89,9 @@ pipeline {
         }
     }
     post {
+        always {
+            sh "rm -rf '${env.WORKSPACE}/.deploy-secrets'"
+        }
         cleanup { sh 'docker image prune -f || true' }
     }
 }
