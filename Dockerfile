@@ -17,6 +17,11 @@ RUN pnpm build
 FROM node:20-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000
+# Listen on every interface. Without this, Docker sets HOSTNAME to the container id and Next's
+# standalone server binds to whichever IP that name resolves to first. The container sits on
+# app-network AND edge-network, so after a restart it could bind edge-network only, and nginx
+# (on app-network) fell back to the coming-soon page (DR, 2026-10-15).
+ENV HOSTNAME=0.0.0.0
 # The commit this image was built from, served by /api/health as `commit` so a deploy is
 # verified over HTTPS instead of by root on the box. Jenkins passes `git rev-parse HEAD`.
 ARG BUILD_COMMIT=unknown
